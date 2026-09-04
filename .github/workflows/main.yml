@@ -3,10 +3,8 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Запуск Ubuntu VPS
-        uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 350
+      - uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
