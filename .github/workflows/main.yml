@@ -4,7 +4,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360
     steps:
-      - uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
+      - name: Запуск VPS
+        run: |
+          sudo apt update
+          sudo apt install -y tmate
+          echo "=== ЖДЕМ ССЫЛКУ ==="
+          tmate -S /tmp/tmate.sock new-session -d
+          tmate -S /tmp/tmate.sock wait tmate-ready
+          echo ""
+          echo "=== КОПИРУЙ ЭТИ 2 СТРОКИ ==="
+          tmate -S /tmp/tmate.sock display -p 'SSH: #{tmate_ssh}'
+          tmate -S /tmp/tmate.sock display -p 'WEB: #{tmate_web}   <- открой в браузере'
+          echo ""
+          echo "Комп будет жить 6 часов"
+          sleep 21600
