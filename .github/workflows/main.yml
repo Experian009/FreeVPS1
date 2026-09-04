@@ -1,0 +1,12 @@
+name: Free Ubuntu VPS - без карты
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Запуск Ubuntu VPS
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 350
