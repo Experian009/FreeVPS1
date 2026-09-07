@@ -1,9 +1,24 @@
-name: Free Ubuntu VPS - без карты
-on:
-  workflow_dispatch:
+name: Windows-RDP-Upterm
+on: workflow_dispatch
+
 jobs:
-  build:
-    runs-on: windows
+  win:
+    runs-on: windows-latest
     timeout-minutes: 360
     steps:
-      - uses: lhotari/action-upterm@v1
+      - name: Enable RDP
+        run: |
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          net user runneradmin ${{ secrets.WIN_PASS }}
+      
+      - name: Install Upterm
+        run: |
+          Invoke-WebRequest -Uri https://github.com/owenthereal/upterm/releases/download/v0.14.0/upterm_windows_amd64.exe -OutFile upterm.exe
+          .\upterm.exe --help
+
+      - name: Start Upterm session for RDP
+        run: |
+          # Пробрасываем RDP порт через upterm
+          .\upterm.exe host --server ssh://uptermd.upterm.dev:22 -- upterm_host --force-command 'powershell' -- powershell
+        # После запуска в логах Actions появится твоя строка ssh ...@uptermd.upterm.dev
