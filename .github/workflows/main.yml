@@ -1,4 +1,4 @@
-name: Windows-RDP-Upterm
+name: Windows-RDP-Upterm-FIXED
 on: workflow_dispatch
 
 jobs:
@@ -11,14 +11,17 @@ jobs:
           Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           net user runneradmin ${{ secrets.WIN_PASS }}
-      
-      - name: Install Upterm
-        run: |
-          Invoke-WebRequest -Uri https://github.com/owenthereal/upterm/releases/download/v0.14.0/upterm_windows_amd64.exe -OutFile upterm.exe
-          .\upterm.exe --help
+          net user runneradmin /active:yes
 
-      - name: Start Upterm session for RDP
+      - name: Create Upterm session (RDP is inside it)
+        uses: lhotari/action-upterm@v1
+        with:
+          limit-access-to-actor: false
+          # limit-access-to-users: твой_гитхаб_ник
+
+      - name: Keep alive
         run: |
-          # Пробрасываем RDP порт через upterm
-          .\upterm.exe host --server ssh://uptermd.upterm.dev:22 -- upterm_host --force-command 'powershell' -- powershell
-        # После запуска в логах Actions появится твоя строка ssh ...@uptermd.upterm.dev
+          while($true){
+            Write-Host "Running... $(Get-Date)"
+            Start-Sleep 300
+          }
