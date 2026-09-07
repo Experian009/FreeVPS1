@@ -1,6 +1,5 @@
-name: Windows-RDP-UPTERM-MANUAL
+name: Windows-RDP-TAILSCALE-RECOMMENDED
 on: workflow_dispatch
-
 jobs:
   win:
     runs-on: windows-latest
@@ -13,22 +12,16 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
           net user runneradmin ${{ secrets.WIN_PASS }}
           net user runneradmin /active:yes
-          Write-Host "RDP enabled for runneradmin"
 
-      - name: Install upterm via scoop
+      - name: Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
+      - name: Show IP and keep alive
         shell: pwsh
         run: |
-          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-          Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://get.scoop.sh')
-          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
-          scoop bucket add upterm https://github.com/owenthereal/scoop-upterm
-          scoop install upterm
-          "$env:USERPROFILE\scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          upterm --help
-
-      - name: Start upterm host with RDP forwarding
-        shell: pwsh
-        run: |
-          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
-          Write-Host "Starting upterm host..."
-          upterm host --server ssh://uptermd.upterm.dev:22 --allow-local-tcp-forwarding -- powershell
+          tailscale ip -4
+          tailscale status
+          Write-Host "=== ГОТОВО: RDP на этот 100.x.x.x ==="
+          while($true){ Start-Sleep 300 }
