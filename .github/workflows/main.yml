@@ -1,27 +1,22 @@
-name: Windows-RDP-Upterm-FIXED
+name: Windows-RDP-TAILSCALE
 on: workflow_dispatch
-
 jobs:
   win:
     runs-on: windows-latest
-    timeout-minutes: 360
     steps:
       - name: Enable RDP
         run: |
-          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
           net user runneradmin ${{ secrets.WIN_PASS }}
-          net user runneradmin /active:yes
 
-      - name: Create Upterm session (RDP is inside it)
-        uses: lhotari/action-upterm@v1
+      - name: Tailscale
+        uses: tailscale/github-action@v2
         with:
-          limit-access-to-actor: false
-          # limit-access-to-users: твой_гитхаб_ник
+          authkey: ${{ secrets.TS_AUTHKEY }}
 
-      - name: Keep alive
+      - name: Show IP
         run: |
-          while($true){
-            Write-Host "Running... $(Get-Date)"
-            Start-Sleep 300
-          }
+          tailscale ip -4
+          tailscale status
+          while($true){ Start-Sleep 300 }
