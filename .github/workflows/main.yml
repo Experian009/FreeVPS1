@@ -1,4 +1,4 @@
-name: Windows-RDP-PLAYIT
+name: Windows-RDP-BORE
 on: workflow_dispatch
 
 jobs:
@@ -23,35 +23,32 @@ jobs:
           netstat -an | findstr 3389
           Write-Host "RDP Ready for runneradmin"
 
-      - name: Install playit.gg
+      - name: Install bore
         shell: pwsh
         run: |
-          Write-Host "Downloading playit.gg..."
-          Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64-signed.exe" -OutFile playit.exe -UseBasicParsing
-          .\playit.exe --version
+          Write-Host "Downloading bore..."
+          Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-pc-windows-msvc.zip" -OutFile bore.zip -UseBasicParsing
+          Expand-Archive -Path bore.zip -DestinationPath .
+          .\bore.exe --help
 
-      - name: Start playit tunnel for RDP 3389
+      - name: Start bore tunnel for RDP 3389
         shell: pwsh
-        env:
-          PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
         run: |
-          Write-Host "Starting playit.gg agent..."
-          # Запускаем агента с твоим секретом
-          Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret $env:PLAYIT_SECRET" -NoNewWindow -RedirectStandardOutput playit.log -RedirectStandardError playit-err.log
+          Write-Host "Starting bore agent..."
+          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -NoNewWindow -RedirectStandardOutput bore.log -RedirectStandardError bore-err.log
           Start-Sleep 15
-          Write-Host "--- playit log ---"
-          Get-Content playit.log -Tail 100
-          Get-Content playit-err.log -Tail 50 -ErrorAction SilentlyContinue
+          Write-Host "--- bore log ---"
+          Get-Content bore.log -Tail 100
+          Get-Content bore-err.log -Tail 50 -ErrorAction SilentlyContinue
           Write-Host "=========================================="
-          Write-Host "Зайди на https://playit.gg/account/tunnels"
-          Write-Host "Там появится твой туннель вида: random.playit.gg:12345"
+          Write-Host "Найди в логах выше строку вида: listening at bore.pub:12345"
           Write-Host "Это и есть твой RDP адрес!"
           Write-Host "Логин: runneradmin"
           Write-Host "Пароль: из WIN_PASS"
-          Write-Host "В mstsc вводи адрес из панели playit.gg"
+          Write-Host "В mstsc (Подключение к удаленному рабочему столу) вводи адрес bore.pub:12345"
           Write-Host "=========================================="
           while($true){
-            Write-Host "[$(Get-Date)] playit alive, check playit.gg panel for address"
-            Get-Content playit.log -Tail 5 -ErrorAction SilentlyContinue
+            Write-Host "[$(Get-Date)] bore alive, check bore.pub port above"
+            Get-Content bore.log -Tail 5 -ErrorAction SilentlyContinue
             Start-Sleep 60
           }
