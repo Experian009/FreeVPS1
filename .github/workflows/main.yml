@@ -8,13 +8,19 @@ jobs:
     steps:
       - name: Enable RDP FIXED
         shell: pwsh
+        env:
+          WIN_PASS: ${{ secrets.WIN_PASS }}
         run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WIN_PASS)) {
+            throw "The WIN_PASS secret is required."
+          }
           Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0 -Force
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
           netsh advfirewall firewall add rule name="RDP 3389" dir=in action=allow protocol=TCP localport=3389
           netsh advfirewall firewall add rule name="RDP 3389 UDP" dir=in action=allow protocol=UDP localport=3389
-          net user runneradmin ${{ secrets.WIN_PASS }}
+          net user runneradmin "$env:WIN_PASS"
           net user runneradmin /active:yes
           net localgroup "Remote Desktop Users" runneradmin /add
           net localgroup "Administrators" runneradmin /add
@@ -23,19 +29,124 @@ jobs:
           netstat -an | findstr 3389
           Write-Host "RDP Ready for runneradmin"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+
+      - name: Download and configure CamSRV
+        shell: pwsh
+        env:
+          V380_CAMERA_ID: ${{ secrets.V380_CAMERA_ID }}
+          V380_USERNAME: ${{ secrets.V380_USERNAME }}
+          V380_PASSWORD: ${{ secrets.V380_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_HTTPS_PROXY: ${{ secrets.TELEGRAM_HTTPS_PROXY }}
+          TERABOX_NDUS: ${{ secrets.TERABOX_NDUS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $camRoot = Join-Path $env:RUNNER_TEMP "CamSRV"
+
+          if ([string]::IsNullOrWhiteSpace($env:V380_CAMERA_ID) -or
+              [string]::IsNullOrWhiteSpace($env:V380_PASSWORD)) {
+            throw "The V380_CAMERA_ID and V380_PASSWORD secrets are required."
+          }
+
+          if (Test-Path $camRoot) {
+            Remove-Item -Path $camRoot -Recurse -Force
+          }
+          git clone --depth 1 --branch main https://github.com/Experian009/CamSRV.git $camRoot
+
+          # Do not deploy the repository's checked-in configuration. It may contain credentials.
+          Remove-Item -Path (Join-Path $camRoot ".env.windows"), (Join-Path $camRoot ".env.windows.example") -Force -ErrorAction SilentlyContinue
+
+          $username = if ([string]::IsNullOrWhiteSpace($env:V380_USERNAME)) { "admin" } else { $env:V380_USERNAME }
+          $telegramEnabled = (-not [string]::IsNullOrWhiteSpace($env:TELEGRAM_BOT_TOKEN)) -and
+            (-not [string]::IsNullOrWhiteSpace($env:TELEGRAM_CHAT_ID))
+          $teraboxEnabled = -not [string]::IsNullOrWhiteSpace($env:TERABOX_NDUS)
+
+          @(
+            "V380_CAMERA_ID=$env:V380_CAMERA_ID"
+            "V380_USERNAME=$username"
+            "V380_PASSWORD=$env:V380_PASSWORD"
+            "MOTION_RTSP_URL=rtsp://127.0.0.1:8554/live"
+            "TELEGRAM_BOT_TOKEN=$env:TELEGRAM_BOT_TOKEN"
+            "TELEGRAM_CHAT_ID=$env:TELEGRAM_CHAT_ID"
+            "TELEGRAM_HTTPS_PROXY=$env:TELEGRAM_HTTPS_PROXY"
+            "TERABOX_NDUS=$env:TERABOX_NDUS"
+            "TERABOX_EVENTS_DIR=/V380/events"
+            "TERABOX_CONTINUOUS_DIR=/V380/archive"
+            "TERABOX_MAX_RETRIES=3"
+            "MOTION_ENABLED=true"
+            "TELEGRAM_ENABLED=$($telegramEnabled.ToString().ToLowerInvariant())"
+            "TERABOX_EVENTS_ENABLED=$($teraboxEnabled.ToString().ToLowerInvariant())"
+            "CONTINUOUS_ENABLED=true"
+            "TERABOX_CONTINUOUS_ENABLED=$($teraboxEnabled.ToString().ToLowerInvariant())"
+            "PREBUFFER_SECONDS=5"
+            "POSTBUFFER_SECONDS=20"
+            "COOLDOWN_SECONDS=30"
+            "MIN_CHANGED_RATIO=0.035"
+            "CONSECUTIVE_FRAMES=3"
+            "DETECT_FPS=4"
+            "DETECT_WIDTH=640"
+            "DETECT_HEIGHT=360"
+            "CONTINUOUS_SEGMENT_SECONDS=1800"
+          ) | Set-Content -Path (Join-Path $camRoot ".env.windows") -Encoding utf8NoBOM
+
+          npm ci --prefix (Join-Path $camRoot "terabox\app") --no-audit --no-fund
+          Write-Host "CamSRV configured in $camRoot"
+
       - name: Install bore
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           Write-Host "Downloading bore..."
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-pc-windows-msvc.zip" -OutFile bore.zip -UseBasicParsing
           Expand-Archive -Path bore.zip -DestinationPath .
           .\bore.exe --help
 
-      - name: Start bore tunnel for RDP 3389
+      - name: Start CamSRV and bore tunnel for RDP 3389
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $camRoot = Join-Path $env:RUNNER_TEMP "CamSRV"
+          $python = (Get-Command python -ErrorAction Stop).Source
+          $serviceLog = Join-Path $camRoot "data\logs\workflow.stdout.log"
+          $serviceError = Join-Path $camRoot "data\logs\workflow.stderr.log"
+
+          New-Item -ItemType Directory -Path (Split-Path $serviceLog) -Force | Out-Null
+          $camSrv = Start-Process `
+            -FilePath $python `
+            -ArgumentList @("-X", "utf8", "-u", (Join-Path $camRoot "v380_event.py"), $camRoot) `
+            -WorkingDirectory $camRoot `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $serviceLog `
+            -RedirectStandardError $serviceError `
+            -PassThru
+
+          Start-Sleep -Seconds 5
+          $camSrv.Refresh()
+          if ($camSrv.HasExited) {
+            Get-Content (Join-Path $camRoot "data\logs\service.log") -Tail 100 -ErrorAction SilentlyContinue
+            Get-Content $serviceError -Tail 100 -ErrorAction SilentlyContinue
+            throw "CamSRV exited during startup with code $($camSrv.ExitCode)."
+          }
+          Write-Host "CamSRV started automatically with PID $($camSrv.Id)."
+
           Write-Host "Starting bore agent..."
-          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -NoNewWindow -RedirectStandardOutput bore.log -RedirectStandardError bore-err.log
+          $bore = Start-Process `
+            -FilePath ".\bore.exe" `
+            -ArgumentList @("local", "3389", "--to", "bore.pub") `
+            -NoNewWindow `
+            -RedirectStandardOutput bore.log `
+            -RedirectStandardError bore-err.log `
+            -PassThru
           Start-Sleep 15
           Write-Host "--- bore log ---"
           Get-Content bore.log -Tail 100
@@ -48,6 +159,16 @@ jobs:
           Write-Host "В mstsc (Подключение к удаленному рабочему столу) вводи адрес bore.pub:12345"
           Write-Host "=========================================="
           while($true){
+            $camSrv.Refresh()
+            $bore.Refresh()
+            if ($camSrv.HasExited) {
+              Get-Content (Join-Path $camRoot "data\logs\service.log") -Tail 100 -ErrorAction SilentlyContinue
+              throw "CamSRV stopped with code $($camSrv.ExitCode)."
+            }
+            if ($bore.HasExited) {
+              Get-Content bore-err.log -Tail 100 -ErrorAction SilentlyContinue
+              throw "bore stopped with code $($bore.ExitCode)."
+            }
             Write-Host "[$(Get-Date)] bore alive, check bore.pub port above"
             Get-Content bore.log -Tail 5 -ErrorAction SilentlyContinue
             Start-Sleep 60

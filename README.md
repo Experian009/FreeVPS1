@@ -187,6 +187,29 @@ Secrets Name | Uses | Notes
 3. Since we are using **ngrok**, you can only run one of those **three** system by one due to ngrok free plan limits, you cannot access both system at the same time unless you purchased **ngrok** pro or business plan.
 4. Not suggested to login any account from any website (just like **Google or Microsoft**), since **VNC** connection is not encrypted and easily been accessed other people.
 
+### CamSRV workflow requirements
+
+The active Windows workflow downloads CamSRV, creates its configuration from secrets, starts
+`v380_event.py` automatically, and then keeps both CamSRV and the bore RDP tunnel alive. It does
+not use the credentials committed in the CamSRV repository.
+
+Add these repository secrets before starting the workflow:
+
+| Secret | Required | Use |
+| --- | --- | --- |
+| `WIN_PASS` | Yes | RDP password for `runneradmin` |
+| `V380_CAMERA_ID` | Yes | V380 camera ID |
+| `V380_PASSWORD` | Yes | V380 camera password |
+| `V380_USERNAME` | No | V380 username, defaults to `admin` |
+| `TELEGRAM_BOT_TOKEN` | No | Telegram delivery; must be paired with `TELEGRAM_CHAT_ID` |
+| `TELEGRAM_CHAT_ID` | No | Telegram destination |
+| `TELEGRAM_HTTPS_PROXY` | No | Explicit Telegram proxy |
+| `TERABOX_NDUS` | No | Enables TeraBox event and continuous uploads |
+
+The service runs through the existing headless CamSRV entry point, so it starts without clicking
+the GUI button and does not depend on an RDP login. The RDP address is printed in the workflow
+log after bore connects.
+
 ## Suggestions and Best Tricks:
 - If you are facing slow and laggy remote control experience from **MacOS** or **Windows**, you can use either **Google Remote Desktop** or **Microsoft Remote Control** for a faster and smoother remotes.
 - We highly recommanded you **fork** this project to change username and other displaying names for systems.
