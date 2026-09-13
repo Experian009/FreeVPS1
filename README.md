@@ -189,27 +189,18 @@ Secrets Name | Uses | Notes
 
 ### CamSRV workflow requirements
 
-The active Windows workflow downloads CamSRV to the temporary runner directory, creates its
-configuration from secrets, copies the complete application to `C:\CamSRV`, and starts
-`C:\CamSRV\v380_event.py` from there. It then keeps both CamSRV and the bore RDP tunnel alive.
-It does not use the credentials committed in the CamSRV repository.
+The active Windows workflow downloads CamSRV to the temporary runner directory and copies the
+complete application to `C:\CamSRV`. It does not install dependencies and does not start any
+CamSRV program. CamSRV can be started manually after connecting over RDP.
 
-Add these repository secrets before starting the workflow:
+Only this repository secret is required for the workflow:
 
 | Secret | Required | Use |
 | --- | --- | --- |
 | `WIN_PASS` | Yes | RDP password for `runneradmin` |
-| `V380_CAMERA_ID` | Yes | V380 camera ID |
-| `V380_PASSWORD` | Yes | V380 camera password |
-| `V380_USERNAME` | No | V380 username, defaults to `admin` |
-| `TELEGRAM_BOT_TOKEN` | No | Telegram delivery; must be paired with `TELEGRAM_CHAT_ID` |
-| `TELEGRAM_CHAT_ID` | No | Telegram destination |
-| `TELEGRAM_HTTPS_PROXY` | No | Explicit Telegram proxy |
-| `TERABOX_NDUS` | No | Enables TeraBox event and continuous uploads |
 
-The service runs through the existing headless CamSRV entry point, so it starts without clicking
-the GUI button and does not depend on an RDP login. The RDP address is printed in the workflow
-log after bore connects.
+The RDP address is printed in the workflow log after bore connects. The V380, Telegram and
+TeraBox secrets are not read or used by this workflow.
 
 ## Suggestions and Best Tricks:
 - If you are facing slow and laggy remote control experience from **MacOS** or **Windows**, you can use either **Google Remote Desktop** or **Microsoft Remote Control** for a faster and smoother remotes.
