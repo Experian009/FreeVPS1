@@ -189,9 +189,18 @@ Secrets Name | Uses | Notes
 
 ### CamSRV workflow requirements
 
-The active Windows workflow downloads CamSRV to the temporary runner directory and copies the
-complete application to `C:\CamSRV`. It does not install dependencies and does not start any
-CamSRV program. CamSRV can be started manually after connecting over RDP.
+The active Windows workflow downloads CamSRV to the temporary runner directory, copies the
+complete application to `C:\CamSRV`, and installs the TeraBox uploader dependencies into
+`C:\CamSRV\terabox\app\node_modules`. It does not start any CamSRV program; CamSRV is started
+manually after connecting over RDP.
+
+Without those Node dependencies the uploader fails at runtime with
+`ERR_MODULE_NOT_FOUND: Cannot find package 'undici'`. To repair a machine that is already
+running, execute in `C:\CamSRV\terabox\app`:
+
+```powershell
+npm ci --no-audit --no-fund
+```
 
 Only this repository secret is required for the workflow:
 

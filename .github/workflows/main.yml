@@ -29,6 +29,11 @@ jobs:
           netstat -an | findstr 3389
           Write-Host "RDP Ready for runneradmin"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+
       - name: Copy CamSRV to C drive
         shell: pwsh
         run: |
@@ -51,6 +56,18 @@ jobs:
           if (-not (Test-Path (Join-Path $camRoot "v380_event.py"))) {
             throw "CamSRV was not copied to $camRoot."
           }
+
+          # The TeraBox uploader is an ESM Node app: without node_modules it fails
+          # with ERR_MODULE_NOT_FOUND for 'undici' when CamSRV uploads a recording.
+          $uploaderDir = Join-Path $camRoot "terabox\app"
+          npm ci --prefix $uploaderDir --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) {
+            throw "npm ci failed in $uploaderDir with code $LASTEXITCODE."
+          }
+          if (-not (Test-Path (Join-Path $uploaderDir "node_modules\undici"))) {
+            throw "TeraBox dependencies are missing in $uploaderDir."
+          }
+
           Write-Host "CamSRV copied from $camSource to $camRoot. The program was not started."
 
       - name: Install bore
