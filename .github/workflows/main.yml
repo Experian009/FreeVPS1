@@ -51,20 +51,20 @@ jobs:
           TERABOX_NDUS: ${{ secrets.TERABOX_NDUS }}
         run: |
           $ErrorActionPreference = "Stop"
-          $camRoot = Join-Path $env:RUNNER_TEMP "CamSRV"
+          $camSource = Join-Path $env:RUNNER_TEMP "CamSRV"
 
           if ([string]::IsNullOrWhiteSpace($env:V380_CAMERA_ID) -or
               [string]::IsNullOrWhiteSpace($env:V380_PASSWORD)) {
             throw "The V380_CAMERA_ID and V380_PASSWORD secrets are required."
           }
 
-          if (Test-Path $camRoot) {
-            Remove-Item -Path $camRoot -Recurse -Force
+          if (Test-Path $camSource) {
+            Remove-Item -Path $camSource -Recurse -Force
           }
-          git clone --depth 1 --branch main https://github.com/Experian009/CamSRV.git $camRoot
+          git clone --depth 1 --branch main https://github.com/Experian009/CamSRV.git $camSource
 
           # Do not deploy the repository's checked-in configuration. It may contain credentials.
-          Remove-Item -Path (Join-Path $camRoot ".env.windows"), (Join-Path $camRoot ".env.windows.example") -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path (Join-Path $camSource ".env.windows"), (Join-Path $camSource ".env.windows.example") -Force -ErrorAction SilentlyContinue
 
           $username = if ([string]::IsNullOrWhiteSpace($env:V380_USERNAME)) { "admin" } else { $env:V380_USERNAME }
           $telegramEnabled = (-not [string]::IsNullOrWhiteSpace($env:TELEGRAM_BOT_TOKEN)) -and
@@ -97,10 +97,23 @@ jobs:
             "DETECT_WIDTH=640"
             "DETECT_HEIGHT=360"
             "CONTINUOUS_SEGMENT_SECONDS=1800"
-          ) | Set-Content -Path (Join-Path $camRoot ".env.windows") -Encoding utf8NoBOM
+          ) | Set-Content -Path (Join-Path $camSource ".env.windows") -Encoding utf8NoBOM
 
-          npm ci --prefix (Join-Path $camRoot "terabox\app") --no-audit --no-fund
-          Write-Host "CamSRV configured in $camRoot"
+          npm ci --prefix (Join-Path $camSource "terabox\app") --no-audit --no-fund
+
+          $camRoot = "C:\CamSRV"
+          if (Test-Path $camRoot) {
+            Remove-Item -Path $camRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $camRoot -Force | Out-Null
+          Remove-Item -Path (Join-Path $camSource ".git") -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath $camSource -Force | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $camRoot -Recurse -Force
+          }
+          if (-not (Test-Path (Join-Path $camRoot "v380_event.py"))) {
+            throw "CamSRV was not copied to $camRoot."
+          }
+          Write-Host "CamSRV copied from $camSource to $camRoot"
 
       - name: Install bore
         shell: pwsh
@@ -115,7 +128,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $camRoot = Join-Path $env:RUNNER_TEMP "CamSRV"
+          $camRoot = "C:\CamSRV"
           $python = (Get-Command python -ErrorAction Stop).Source
           $serviceLog = Join-Path $camRoot "data\logs\workflow.stdout.log"
           $serviceError = Join-Path $camRoot "data\logs\workflow.stderr.log"

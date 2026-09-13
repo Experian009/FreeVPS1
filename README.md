@@ -189,9 +189,10 @@ Secrets Name | Uses | Notes
 
 ### CamSRV workflow requirements
 
-The active Windows workflow downloads CamSRV, creates its configuration from secrets, starts
-`v380_event.py` automatically, and then keeps both CamSRV and the bore RDP tunnel alive. It does
-not use the credentials committed in the CamSRV repository.
+The active Windows workflow downloads CamSRV to the temporary runner directory, creates its
+configuration from secrets, copies the complete application to `C:\CamSRV`, and starts
+`C:\CamSRV\v380_event.py` from there. It then keeps both CamSRV and the bore RDP tunnel alive.
+It does not use the credentials committed in the CamSRV repository.
 
 Add these repository secrets before starting the workflow:
 
