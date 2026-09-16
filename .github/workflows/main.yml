@@ -1,0 +1,182 @@
+name: Windows-RDP-BORE
+
+on: workflow_dispatch
+
+jobs:
+  win:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - name: Enable RDP FIXED
+        shell: pwsh
+        env:
+          WIN_PASS: ${{ secrets.WIN_PASS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WIN_PASS)) {
+            throw "The WIN_PASS secret is required."
+          }
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+          netsh advfirewall firewall add rule name="RDP 3389" dir=in action=allow protocol=TCP localport=3389
+          netsh advfirewall firewall add rule name="RDP 3389 UDP" dir=in action=allow protocol=UDP localport=3389
+          net user runneradmin "$env:WIN_PASS"
+          net user runneradmin /active:yes
+          net localgroup "Remote Desktop Users" runneradmin /add
+          net localgroup "Administrators" runneradmin /add
+          Restart-Service TermService -Force -ErrorAction SilentlyContinue
+          Start-Sleep 5
+          netstat -an | findstr 3389
+          Write-Host "RDP Ready for runneradmin"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+
+      - name: Copy CamSRV to C drive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $camSource = Join-Path $env:RUNNER_TEMP "CamSRV"
+          if (Test-Path $camSource) {
+            Remove-Item -Path $camSource -Recurse -Force
+          }
+          git clone --depth 1 --branch main https://github.com/Experian009/CamSRV.git $camSource
+
+          $camRoot = "C:\CamSRV"
+          if (Test-Path $camRoot) {
+            Remove-Item -Path $camRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $camRoot -Force | Out-Null
+          Remove-Item -Path (Join-Path $camSource ".git") -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath $camSource -Force | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $camRoot -Recurse -Force
+          }
+          if (-not (Test-Path (Join-Path $camRoot "v380_event.py"))) {
+            throw "CamSRV was not copied to $camRoot."
+          }
+
+          # The TeraBox uploader is an ESM Node app: without node_modules it fails
+          # with ERR_MODULE_NOT_FOUND for 'undici' when CamSRV uploads a recording.
+          $uploaderDir = Join-Path $camRoot "terabox\app"
+          npm ci --prefix $uploaderDir --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) {
+            throw "npm ci failed in $uploaderDir with code $LASTEXITCODE."
+          }
+          if (-not (Test-Path (Join-Path $uploaderDir "node_modules\undici"))) {
+            throw "TeraBox dependencies are missing in $uploaderDir."
+          }
+
+          Write-Host "CamSRV copied from $camSource to $camRoot. The program was not started."
+
+      # NEW ------------------------------------------------------------------
+      # Makes start.bat run by itself as soon as the RDP session logs on, which
+      # is what RDP_MODE=desktop needs. A scheduled task is used rather than the
+      # Startup folder: if C:\Users\runneradmin does not exist yet, creating it
+      # by hand makes Windows build a *different* profile
+      # (runneradmin.COMPUTERNAME) at the first logon, and the Startup entry
+      # would simply be ignored.
+      - name: Run start.bat on every logon
+        shell: pwsh
+        env:
+          WIN_PASS: ${{ secrets.WIN_PASS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $wrapper = "C:\CamSRV\start-camsrv.cmd"
+          Set-Content -Path $wrapper -Encoding ASCII -Value @'
+          @echo off
+          ping -n 16 127.0.0.1 > nul
+          cd /d C:\CamSRV
+          if exist "C:\CamSRV\start.bat" call "C:\CamSRV\start.bat"
+          '@
+          schtasks /create /tn StartCamSRV /tr "$wrapper" /sc onlogon `
+            /ru runneradmin /rp "$env:WIN_PASS" /it /rl highest /f
+          schtasks /query /tn StartCamSRV
+
+      - name: Install bore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Downloading bore..."
+          Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-pc-windows-msvc.zip" -OutFile bore.zip -UseBasicParsing
+          Expand-Archive -Path bore.zip -DestinationPath .
+          .\bore.exe --help
+
+      # CHANGED --------------------------------------------------------------
+      # bore supports `--port`, so the remote port can be pinned instead of
+      # random. With a pinned port the monitor needs no log parsing at all:
+      # just put RDP_ENDPOINT=bore.pub:41414 into .env.
+      #
+      # If the pinned port is busy (a stale tunnel), it falls back to a random
+      # one and prints the real address as `RDP_ENDPOINT=host:port` — a clean
+      # marker line the monitor understands without guessing.
+      - name: Start bore tunnel for RDP 3389
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pinned = "41414"
+
+          function Start-Bore {
+            param([string[]]$Extra = @())
+            $a = @("local", "3389", "--to", "bore.pub") + $Extra
+            Write-Host "starting: bore $($a -join ' ')"
+            return Start-Process `
+              -FilePath ".\bore.exe" `
+              -ArgumentList $a `
+              -NoNewWindow `
+              -RedirectStandardOutput bore.log `
+              -RedirectStandardError bore-err.log `
+              -PassThru
+          }
+
+          function Get-BoreEndpoint {
+            if (Test-Path bore.log) {
+              $hits = Select-String -Path bore.log -Pattern 'listening at\s+([A-Za-z0-9._-]+):(\d+)'
+              if ($hits) {
+                $m = [regex]::Match($hits[-1].Line, 'listening at\s+([A-Za-z0-9._-]+):(\d+)')
+                return "$($m.Groups[1].Value):$($m.Groups[2].Value)"
+              }
+            }
+            return $null
+          }
+
+          $bore = Start-Bore -Extra @("--port", $pinned)
+          Start-Sleep 20
+          $bore.Refresh()
+          if ($bore.HasExited) {
+            Write-Host "Port $pinned is taken; retrying with a random port."
+            Remove-Item bore.log, bore-err.log -ErrorAction SilentlyContinue
+            $bore = Start-Bore
+            Start-Sleep 20
+            $bore.Refresh()
+          }
+          if ($bore.HasExited) {
+            Get-Content bore-err.log -Tail 100 -ErrorAction SilentlyContinue
+            throw "bore stopped with code $($bore.ExitCode)."
+          }
+
+          $endpoint = Get-BoreEndpoint
+          if (-not $endpoint) {
+            Get-Content bore.log -Tail 50 -ErrorAction SilentlyContinue
+            Get-Content bore-err.log -Tail 50 -ErrorAction SilentlyContinue
+            throw "Could not read the bore endpoint from the log."
+          }
+
+          Write-Host "=========================================="
+          Write-Host "RDP_ENDPOINT=$endpoint"
+          Write-Host "Адрес:  $endpoint"
+          Write-Host "Логин:  runneradmin"
+          Write-Host "Пароль: из WIN_PASS"
+          Write-Host "=========================================="
+
+          while ($true) {
+            $bore.Refresh()
+            if ($bore.HasExited) {
+              Get-Content bore-err.log -Tail 100 -ErrorAction SilentlyContinue
+              throw "bore stopped with code $($bore.ExitCode)."
+            }
+            Write-Host "[$(Get-Date)] bore alive, endpoint $endpoint"
+            Start-Sleep 60
+          }
