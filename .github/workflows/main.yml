@@ -58,8 +58,6 @@ jobs:
             throw "CamSRV was not copied to $camRoot."
           }
 
-          # The TeraBox uploader is an ESM Node app: without node_modules it fails
-          # with ERR_MODULE_NOT_FOUND for 'undici' when CamSRV uploads a recording.
           $uploaderDir = Join-Path $camRoot "terabox\app"
           npm ci --prefix $uploaderDir --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) {
@@ -71,29 +69,85 @@ jobs:
 
           Write-Host "CamSRV copied from $camSource to $camRoot. The program was not started."
 
-      # NEW ------------------------------------------------------------------
-      # Makes start.bat run by itself as soon as the RDP session logs on, which
-      # is what RDP_MODE=desktop needs. A scheduled task is used rather than the
-      # Startup folder: if C:\Users\runneradmin does not exist yet, creating it
-      # by hand makes Windows build a *different* profile
-      # (runneradmin.COMPUTERNAME) at the first logon, and the Startup entry
-      # would simply be ignored.
-      - name: Run start.bat on every logon
+      # CHANGED --------------------------------------------------------------
+      # Р—Р°РїСѓСЃРє v380_gui.py РїРѕСЃР»Рµ РІС…РѕРґР° РїРѕ RDP.
+      #
+      # РћС‚Р»РёС‡РёСЏ РѕС‚ РїСЂРµР¶РЅРµРіРѕ С€Р°РіР°:
+      #   * Register-ScheduledTask + InteractiveToken РІРјРµСЃС‚Рѕ schtasks /it /rl highest.
+      #     РљРѕРјР±РёРЅР°С†РёСЏ /it СЃ /rl highest РєРѕРЅС„Р»РёРєС‚СѓРµС‚, Р° РїР°СЂРѕР»СЊ РІ /rp РІРёРґРµРЅ РІ
+      #     СЃРїРёСЃРєРµ РїСЂРѕС†РµСЃСЃРѕРІ. Р—РґРµСЃСЊ РїР°СЂРѕР»СЊ РІРѕРѕР±С‰Рµ РЅРµ РЅСѓР¶РµРЅ.
+      #   * РћР±С‘СЂС‚РєР° РІС‹Р·С‹РІР°РµС‚ v380_gui.py РЅР°РїСЂСЏРјСѓСЋ, Р° РЅРµ start.bat: РІ start.bat
+      #     РїРѕСЃР»РµРґРЅСЏСЏ СЃС‚СЂРѕРєР° "if errorlevel 1 pause", Рё РІ РЅРµРІРёРґРёРјРѕР№ СЃРµСЃСЃРёРё
+      #     pause РїРѕРІРµСЃРёР» Р±С‹ РїСЂРѕС†РµСЃСЃ РЅР°РІСЃРµРіРґР°.
+      #   * Р—Р°РґРµСЂР¶РєР° 30 СЃРµРєСѓРЅРґ РІРјРµСЃС‚Рѕ 15: РїСЂРѕС„РёР»СЊ РїСЂРё РїРµСЂРІРѕРј РІС…РѕРґРµ СЃРѕР·РґР°С‘С‚СЃСЏ РґРѕР»СЊС€Рµ.
+      #   * Р’С‹РІРѕРґ РїРёС€РµС‚СЃСЏ РІ C:\CamSRV\gui.log, РёРЅР°С‡Рµ РѕС€РёР±РєСѓ tkinter РЅРµ СѓРІРёРґРµС‚СЊ.
+      - name: Register CamSRV GUI on RDP logon
         shell: pwsh
-        env:
-          WIN_PASS: ${{ secrets.WIN_PASS }}
         run: |
           $ErrorActionPreference = "Stop"
+
           $wrapper = "C:\CamSRV\start-camsrv.cmd"
           Set-Content -Path $wrapper -Encoding ASCII -Value @'
           @echo off
-          ping -n 16 127.0.0.1 > nul
+          setlocal
           cd /d C:\CamSRV
-          if exist "C:\CamSRV\start.bat" call "C:\CamSRV\start.bat"
+          ping -n 31 127.0.0.1 > nul
+          if not exist ".env.windows" copy /y ".env.windows.example" ".env.windows" >nul
+          where py >nul 2>nul
+          if %errorlevel%==0 (
+            py -3 v380_gui.py >> "C:\CamSRV\gui.log" 2>&1
+          ) else (
+            python v380_gui.py >> "C:\CamSRV\gui.log" 2>&1
+          )
           '@
-          schtasks /create /tn StartCamSRV /tr "$wrapper" /sc onlogon `
-            /ru runneradmin /rp "$env:WIN_PASS" /it /rl highest /f
-          schtasks /query /tn StartCamSRV
+
+          $xml = @"
+          <?xml version="1.0" encoding="UTF-16"?>
+          <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+            <RegistrationInfo>
+              <Description>Р—Р°РїСѓСЃРє v380_gui.py РїРѕСЃР»Рµ РІС…РѕРґР° РїРѕ RDP</Description>
+            </RegistrationInfo>
+            <Triggers>
+              <LogonTrigger>
+                <Enabled>true</Enabled>
+                <UserId>runneradmin</UserId>
+                <Delay>PT30S</Delay>
+              </LogonTrigger>
+            </Triggers>
+            <Principals>
+              <Principal id="Author">
+                <UserId>runneradmin</UserId>
+                <LogonType>InteractiveToken</LogonType>
+                <RunLevel>HighestAvailable</RunLevel>
+              </Principal>
+            </Principals>
+            <Settings>
+              <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+              <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+              <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+              <AllowHardTerminate>true</AllowHardTerminate>
+              <StartWhenAvailable>true</StartWhenAvailable>
+              <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+              <AllowStartOnDemand>true</AllowStartOnDemand>
+              <Enabled>true</Enabled>
+              <Hidden>false</Hidden>
+              <RunOnlyIfIdle>false</RunOnlyIfIdle>
+              <WakeToRun>false</WakeToRun>
+              <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+              <Priority>7</Priority>
+            </Settings>
+            <Actions Context="Author">
+              <Exec>
+                <Command>C:\CamSRV\start-camsrv.cmd</Command>
+                <WorkingDirectory>C:\CamSRV</WorkingDirectory>
+              </Exec>
+            </Actions>
+          </Task>
+          "@
+
+          Register-ScheduledTask -TaskName "StartCamSRV" -Xml $xml -Force | Out-Null
+          Write-Host "Р—Р°РґР°С‡Р° StartCamSRV Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅР°."
+          Get-ScheduledTask -TaskName "StartCamSRV" | Select-Object TaskName, State | Format-Table -AutoSize
 
       - name: Install bore
         shell: pwsh
@@ -104,14 +158,6 @@ jobs:
           Expand-Archive -Path bore.zip -DestinationPath .
           .\bore.exe --help
 
-      # CHANGED --------------------------------------------------------------
-      # bore supports `--port`, so the remote port can be pinned instead of
-      # random. With a pinned port the monitor needs no log parsing at all:
-      # just put RDP_ENDPOINT=bore.pub:41414 into .env.
-      #
-      # If the pinned port is busy (a stale tunnel), it falls back to a random
-      # one and prints the real address as `RDP_ENDPOINT=host:port` — a clean
-      # marker line the monitor understands without guessing.
       - name: Start bore tunnel for RDP 3389
         shell: pwsh
         run: |
@@ -166,9 +212,9 @@ jobs:
 
           Write-Host "=========================================="
           Write-Host "RDP_ENDPOINT=$endpoint"
-          Write-Host "Адрес:  $endpoint"
-          Write-Host "Логин:  runneradmin"
-          Write-Host "Пароль: из WIN_PASS"
+          Write-Host "РђРґСЂРµСЃ:  $endpoint"
+          Write-Host "Р›РѕРіРёРЅ:  runneradmin"
+          Write-Host "РџР°СЂРѕР»СЊ: РёР· WIN_PASS"
           Write-Host "=========================================="
 
           while ($true) {
@@ -180,3 +226,4 @@ jobs:
             Write-Host "[$(Get-Date)] bore alive, endpoint $endpoint"
             Start-Sleep 60
           }
+
