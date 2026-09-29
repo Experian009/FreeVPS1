@@ -54,7 +54,7 @@ jobs:
           Get-ChildItem -LiteralPath $camSource -Force | ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination $camRoot -Recurse -Force
           }
-          if (-not (Test-Path (Join-Path $camRoot "v380_event.py"))) {
+          if (-not (Test-Path (Join-Path $camRoot "v380_gui.py"))) {
             throw "CamSRV was not copied to $camRoot."
           }
 
@@ -69,19 +69,21 @@ jobs:
 
           Write-Host "CamSRV copied from $camSource to $camRoot. The program was not started."
 
-      # CHANGED --------------------------------------------------------------
-      # Р—Р°РїСѓСЃРє v380_gui.py РїРѕСЃР»Рµ РІС…РѕРґР° РїРѕ RDP.
+      # ---------------------------------------------------------------------
+      # Запуск v380_gui.py при входе пользователя.
       #
-      # РћС‚Р»РёС‡РёСЏ РѕС‚ РїСЂРµР¶РЅРµРіРѕ С€Р°РіР°:
-      #   * Register-ScheduledTask + InteractiveToken РІРјРµСЃС‚Рѕ schtasks /it /rl highest.
-      #     РљРѕРјР±РёРЅР°С†РёСЏ /it СЃ /rl highest РєРѕРЅС„Р»РёРєС‚СѓРµС‚, Р° РїР°СЂРѕР»СЊ РІ /rp РІРёРґРµРЅ РІ
-      #     СЃРїРёСЃРєРµ РїСЂРѕС†РµСЃСЃРѕРІ. Р—РґРµСЃСЊ РїР°СЂРѕР»СЊ РІРѕРѕР±С‰Рµ РЅРµ РЅСѓР¶РµРЅ.
-      #   * РћР±С‘СЂС‚РєР° РІС‹Р·С‹РІР°РµС‚ v380_gui.py РЅР°РїСЂСЏРјСѓСЋ, Р° РЅРµ start.bat: РІ start.bat
-      #     РїРѕСЃР»РµРґРЅСЏСЏ СЃС‚СЂРѕРєР° "if errorlevel 1 pause", Рё РІ РЅРµРІРёРґРёРјРѕР№ СЃРµСЃСЃРёРё
-      #     pause РїРѕРІРµСЃРёР» Р±С‹ РїСЂРѕС†РµСЃСЃ РЅР°РІСЃРµРіРґР°.
-      #   * Р—Р°РґРµСЂР¶РєР° 30 СЃРµРєСѓРЅРґ РІРјРµСЃС‚Рѕ 15: РїСЂРѕС„РёР»СЊ РїСЂРё РїРµСЂРІРѕРј РІС…РѕРґРµ СЃРѕР·РґР°С‘С‚СЃСЏ РґРѕР»СЊС€Рµ.
-      #   * Р’С‹РІРѕРґ РїРёС€РµС‚СЃСЏ РІ C:\CamSRV\gui.log, РёРЅР°С‡Рµ РѕС€РёР±РєСѓ tkinter РЅРµ СѓРІРёРґРµС‚СЊ.
-      - name: Register CamSRV GUI on RDP logon
+      # Отличия от прежнего шага:
+      #   * Register-ScheduledTask + InteractiveToken вместо schtasks /it /rl highest.
+      #     Комбинация /it с /rl highest конфликтует, а пароль в /rp виден в
+      #     списке процессов. Здесь пароль вообще не нужен.
+      #   * Обёртка вызывает v380_gui.py напрямую, а не start.bat: в start.bat
+      #     последняя строка "if errorlevel 1 pause", и в невидимой сессии
+      #     pause повесил бы процесс навсегда.
+      #   * Задержка 30 секунд вместо 15: профиль при первом входе создаётся дольше.
+      #   * Вывод пишется в C:\CamSRV\gui.log, иначе ошибку tkinter не увидеть.
+      #   * FIX: если не найден ни py, ни python — в лог пишется ошибка,
+      #     раньше обёртка молча завершалась.
+      - name: Register CamSRV GUI on logon
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -97,7 +99,12 @@ jobs:
           if %errorlevel%==0 (
             py -3 v380_gui.py >> "C:\CamSRV\gui.log" 2>&1
           ) else (
-            python v380_gui.py >> "C:\CamSRV\gui.log" 2>&1
+            where python >nul 2>nul
+            if %errorlevel%==0 (
+              python v380_gui.py >> "C:\CamSRV\gui.log" 2>&1
+            ) else (
+              echo [ERROR] Python not found >> "C:\CamSRV\gui.log" 2>&1
+            )
           )
           '@
 
@@ -105,7 +112,7 @@ jobs:
           <?xml version="1.0" encoding="UTF-16"?>
           <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
             <RegistrationInfo>
-              <Description>Р—Р°РїСѓСЃРє v380_gui.py РїРѕСЃР»Рµ РІС…РѕРґР° РїРѕ RDP</Description>
+              <Description>Запуск v380_gui.py после входа пользователя</Description>
             </RegistrationInfo>
             <Triggers>
               <LogonTrigger>
@@ -146,7 +153,7 @@ jobs:
           "@
 
           Register-ScheduledTask -TaskName "StartCamSRV" -Xml $xml -Force | Out-Null
-          Write-Host "Р—Р°РґР°С‡Р° StartCamSRV Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅР°."
+          Write-Host "Задача StartCamSRV зарегистрирована."
           Get-ScheduledTask -TaskName "StartCamSRV" | Select-Object TaskName, State | Format-Table -AutoSize
 
       - name: Install bore
@@ -157,6 +164,59 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-pc-windows-msvc.zip" -OutFile bore.zip -UseBasicParsing
           Expand-Archive -Path bore.zip -DestinationPath .
           .\bore.exe --help
+
+      # ---------------------------------------------------------------------
+      # NEW: автоматический вход + перезагрузка.
+      #
+      # Задача StartCamSRV висит на триггере Logon, но сам по себе вход никто
+      # не выполняет — раньше для этого нужно было вручную подключаться по RDP.
+      # Здесь включается автологон runneradmin и VM перезагружается: после
+      # перезагрузки Windows сам входит в систему и срабатывает задача.
+      # Агент GitHub Actions переживает перезагрузку и продолжает job
+      # со следующего шага — это штатный паттерн для Windows-раннеров.
+      - name: Enable auto-login and reboot
+        shell: pwsh
+        env:
+          WIN_PASS: ${{ secrets.WIN_PASS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WIN_PASS)) {
+            throw "The WIN_PASS secret is required."
+          }
+          $reg = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+          Set-ItemProperty -Path $reg -Name AutoAdminLogon -Value 1 -Type String -Force
+          Set-ItemProperty -Path $reg -Name DefaultUserName -Value 'runneradmin' -Type String -Force
+          Set-ItemProperty -Path $reg -Name DefaultPassword -Value $env:WIN_PASS -Type String -Force
+          Set-ItemProperty -Path $reg -Name DefaultDomainName -Value $env:COMPUTERNAME -Type String -Force
+          Write-Host "Auto-login enabled for runneradmin. Rebooting..."
+          shutdown /r /t 15 /f
+
+      # ---------------------------------------------------------------------
+      # NEW: проверка, что GUI действительно запустилась.
+      # Ждём до 3 минут появления процесса python и смотрим хвост gui.log.
+      # Раньше в логах workflow вообще не было видно, стартовала ли программа.
+      - name: Verify CamSRV GUI started
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $taskInfo = Get-ScheduledTask -TaskName "StartCamSRV" | Get-ScheduledTaskInfo
+          Write-Host "StartCamSRV LastRunTime: $($taskInfo.LastRunTime)"
+
+          $deadline = (Get-Date).AddMinutes(3)
+          $py = $null
+          while ((Get-Date) -lt $deadline -and -not $py) {
+            $py = Get-Process -Name "python" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $py) { Start-Sleep 15 }
+          }
+          if (-not $py) {
+            Write-Host "--- gui.log tail ---"
+            Get-Content "C:\CamSRV\gui.log" -Tail 30 -ErrorAction SilentlyContinue
+            throw "python process not found — v380_gui.py did not start."
+          }
+          $py | Select-Object Name, Id, StartTime | Format-Table -AutoSize
+          Write-Host "--- gui.log tail ---"
+          Get-Content "C:\CamSRV\gui.log" -Tail 30 -ErrorAction SilentlyContinue
+          Write-Host "CamSRV GUI is running."
 
       - name: Start bore tunnel for RDP 3389
         shell: pwsh
@@ -206,15 +266,15 @@ jobs:
           $endpoint = Get-BoreEndpoint
           if (-not $endpoint) {
             Get-Content bore.log -Tail 50 -ErrorAction SilentlyContinue
-            Get-Content bore-err.log -Tail 50 -ErrorAction SilentlyContinue
+            Get-Content bore-err.log -Tail 100 -ErrorAction SilentlyContinue
             throw "Could not read the bore endpoint from the log."
           }
 
           Write-Host "=========================================="
           Write-Host "RDP_ENDPOINT=$endpoint"
-          Write-Host "РђРґСЂРµСЃ:  $endpoint"
-          Write-Host "Р›РѕРіРёРЅ:  runneradmin"
-          Write-Host "РџР°СЂРѕР»СЊ: РёР· WIN_PASS"
+          Write-Host "Адрес:  $endpoint"
+          Write-Host "Логин:  runneradmin"
+          Write-Host "Пароль: из WIN_PASS"
           Write-Host "=========================================="
 
           while ($true) {
@@ -226,4 +286,3 @@ jobs:
             Write-Host "[$(Get-Date)] bore alive, endpoint $endpoint"
             Start-Sleep 60
           }
-
