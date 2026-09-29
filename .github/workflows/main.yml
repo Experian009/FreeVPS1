@@ -189,11 +189,32 @@ jobs:
           Set-ItemProperty -Path $reg -Name DefaultPassword -Value $env:WIN_PASS -Type String -Force
           Set-ItemProperty -Path $reg -Name DefaultDomainName -Value $env:COMPUTERNAME -Type String -Force
           Write-Host "Auto-login enabled for runneradmin. Rebooting..."
-          shutdown /r /t 15 /f
+          # Маркер времени: по нему следующий шаг проверит, что ребут реально был
+          (Get-Date).ToString('o') | Out-File C:\reboot_marker.txt -Encoding ASCII -Force
+          shutdown /r /t 10 /f
 
       # ---------------------------------------------------------------------
-      # NEW: проверка, что GUI действительно запустилась.
-      # Ждём до 3 минут появления процесса python и смотрим хвост gui.log.
+      # NEW: быстрая проверка, что перезагрузка действительно произошла.
+      # Если ребута не было — падаем сразу с понятной ошибкой, а не висим
+      # 4 минуты в ожидании процесса, который никогда не появится.
+      - name: Confirm reboot and logon
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $markerTime = [datetime]::Parse((Get-Content C:\reboot_marker.txt -ErrorAction Stop))
+          $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+          Write-Host "Pre-reboot marker: $markerTime"
+          Write-Host "LastBootUpTime:    $boot"
+          if ($boot -lt $markerTime) {
+            throw "REBOOT DID NOT HAPPEN. LastBootUpTime ($boot) раньше маркера ($markerTime). Автологон не выполнялся, задача StartCamSRV не могла сработать."
+          }
+          Write-Host "Reboot confirmed."
+          Write-Host "--- logged on users ---"
+          query user 2>&1 | Out-String | Write-Host
+
+      # ---------------------------------------------------------------------
+      # Проверка, что GUI действительно запустилась.
+      # Ждём до 4 минут появления процесса python и смотрим хвост gui.log.
       # Раньше в логах workflow вообще не было видно, стартовала ли программа.
       - name: Verify CamSRV GUI started
         shell: pwsh
@@ -201,8 +222,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           $taskInfo = Get-ScheduledTask -TaskName "StartCamSRV" | Get-ScheduledTaskInfo
           Write-Host "StartCamSRV LastRunTime: $($taskInfo.LastRunTime)"
+          Write-Host "--- logged on users ---"
+          query user 2>&1 | Out-String | Write-Host
 
-          $deadline = (Get-Date).AddMinutes(3)
+          $deadline = (Get-Date).AddMinutes(4)
           $py = $null
           while ((Get-Date) -lt $deadline -and -not $py) {
             $py = Get-Process -Name "python" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -286,3 +309,4 @@ jobs:
             Write-Host "[$(Get-Date)] bore alive, endpoint $endpoint"
             Start-Sleep 60
           }
+          
