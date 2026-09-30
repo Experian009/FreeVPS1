@@ -70,7 +70,32 @@ jobs:
           }
 
           Write-Host "CamSRV copied from $camSource to $camRoot. The program was not started."
+      - name: Install human-detection deps (if enabled)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $envFile = "C:\CamSRV\.env.windows"
+          $enabled = $false
+          if (Test-Path $envFile) {
+            $enabled = Select-String -Path $envFile -Pattern "^HUMAN_DETECT=1" -Quiet
+          }
+          if (-not $enabled) {
+            Write-Host "HUMAN_DETECT is not enabled in .env.windows - skipping ultralytics install."
+            exit 0
+          }
+          $pyCmd = Get-Command python.exe -ErrorAction SilentlyContinue
+          if (-not $pyCmd) { $pyCmd = Get-Command py.exe -ErrorAction SilentlyContinue }
+          if (-not $pyCmd) { throw "Python not found on the runner." }
+          $pyExe = $pyCmd.Source
+          Write-Host "Installing CPU torch + ultralytics ..."
+          & $pyExe -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          if ($LASTEXITCODE -ne 0) { throw "pip install torch (CPU) failed, code $LASTEXITCODE." }
+          & $pyExe -m pip install --quiet ultralytics
+          if ($LASTEXITCODE -ne 0) { throw "pip install ultralytics failed, code $LASTEXITCODE." }
+          Write-Host "Human-detection dependencies installed."
 
+      
+      
       - name: Install bore
         shell: pwsh
         run: |
