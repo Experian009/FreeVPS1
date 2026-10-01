@@ -1,6 +1,8 @@
 name: Windows-RDP-BORE
 
+
 on: workflow_dispatch
+
 
 jobs:
   win:
@@ -243,13 +245,37 @@ jobs:
           Write-Host "Пароль: из WIN_PASS"
           Write-Host "=========================================="
 
+          # Watchdog: bore.pub sometimes closes the connection (bore then exits,
+          # even with code 0). The tunnel is auxiliary — never fail the whole job
+          # over it. Restart bore and keep the VM alive for the full 6 hours.
+          $restarts = 0
           while ($true) {
             $bore.Refresh()
             if ($bore.HasExited) {
-              Get-Content bore-err.log -Tail 100 -ErrorAction SilentlyContinue
-              throw "bore stopped with code $($bore.ExitCode)."
+              $restarts++
+              $code = $bore.ExitCode
+              Write-Host "[$(Get-Date)] bore exited with code $code (restart #$restarts). Last error lines:"
+              Get-Content bore-err.log -Tail 20 -ErrorAction SilentlyContinue
+              Write-Host "Restarting bore in 10s (random port)..."
+              Start-Sleep 10
+              Remove-Item bore.log, bore-err.log -ErrorAction SilentlyContinue
+              $bore = Start-Bore
+              Start-Sleep 20
+              $bore.Refresh()
+              if ($bore.HasExited) {
+                Write-Host "WARNING: bore failed to restart (code $($bore.ExitCode)); retrying in 60s."
+                Start-Sleep 60
+                continue
+              }
+              $endpoint = Get-BoreEndpoint
+              Write-Host "=========================================="
+              Write-Host "RDP_ENDPOINT=$endpoint (reconnect #$restarts)"
+              Write-Host "Адрес:  $endpoint"
+              Write-Host "Логин:  runneradmin"
+              Write-Host "Пароль: из WIN_PASS"
+              Write-Host "=========================================="
+              continue
             }
             Write-Host "[$(Get-Date)] bore alive, endpoint $endpoint"
             Start-Sleep 60
           }
-          
