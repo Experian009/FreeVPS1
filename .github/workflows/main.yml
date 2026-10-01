@@ -45,7 +45,7 @@ jobs:
           if (Test-Path $camSource) {
             Remove-Item -Path $camSource -Recurse -Force
           }
-          git clone --depth 1 --branch main https://github.com/Experian009/CamSRV.git $camSource
+          git clone --depth 1 --branch main https://x-access-token:${{ secrets.CAMSRV_READ_TOKEN }}@github.com/Experian009/CamSRV.git $camSource
 
           $camRoot = "C:\CamSRV"
           if (Test-Path $camRoot) {
