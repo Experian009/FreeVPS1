@@ -1,8 +1,8 @@
-#linux-run.sh LINUX_USER_PASSWORD NGROK_AUTH_TOKEN CHROME_HEADLESS_CODE LINUX_MACHINE_NAME LINUX_USERNAME GOOGLE_REMOTE_PIN
 #!/bin/bash
+#linux-run.sh LINUX_USER_PASSWORD NGROK_AUTH_TOKEN CHROME_HEADLESS_CODE LINUX_MACHINE_NAME LINUX_USERNAME GOOGLE_REMOTE_PIN
 
-sudo useradd -m $LINUX_USERNAME
-sudo adduser $LINUX_USERNAME sudo
+sudo useradd -m "$LINUX_USERNAME"
+sudo adduser "$LINUX_USERNAME" sudo
 echo "$LINUX_USERNAME:$LINUX_USER_PASSWORD" | sudo chpasswd
 sed -i 's/\/bin\/sh/\/bin\/bash/g' /etc/passwd
 sudo apt-get update
@@ -20,11 +20,11 @@ sudo apt install --assume-yes --fix-broken
 sudo apt install nautilus nano -y
 sudo apt install gdebi
 sudo apt -y install firefox
-sudo hostname $LINUX_MACHINE_NAME
-sudo adduser $LINUX_USERNAME chrome-remote-desktop
+sudo hostname "$LINUX_MACHINE_NAME"
+sudo adduser "$LINUX_USERNAME" chrome-remote-desktop
 sudo apt install tightvncserver
 echo -e "no\n$LINUX_USER_PASSWORD\n$LINUX_USER_PASSWORD" | tightvncserver :1
-echo -e "$GOOGLE_REMOTE_PIN\n$GOOGLE_REMOTE_PIN" | su - $LINUX_USERNAME -c """$CHROME_HEADLESS_CODE"""
+echo -e "$GOOGLE_REMOTE_PIN\n$GOOGLE_REMOTE_PIN" | su - "$LINUX_USERNAME" -c """$CHROME_HEADLESS_CODE"""
 
 if [[ -z "$NGROK_AUTH_TOKEN" ]]; then
   echo "Please set 'NGROK_AUTH_TOKEN'"
