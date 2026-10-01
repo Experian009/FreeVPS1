@@ -160,7 +160,7 @@ jobs:
           $task = Get-ScheduledTask -TaskName "CamSRVService"
           Write-Host "CamSRVService state: $($task.State)"
           if ($task.State -ne "Running") {
-            throw "CamSRVService is not Running (state: $($task.State))."
+            $info = Get-ScheduledTask -TaskName "CamSRVService" | Get-ScheduledTaskInfo; Write-Host "LastTaskResult: $($info.LastTaskResult)"; Write-Host "--- service.log tail ---"; Get-Content "C:\CamSRV\data\logs\service.log" -Tail 40 -ErrorAction SilentlyContinue; throw "CamSRVService is not Running (state: $($task.State))."
           }
 
       # ---------------------------------------------------------------------
