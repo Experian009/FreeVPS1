@@ -155,7 +155,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Start-ScheduledTask -TaskName "CamSRVService"
+          Write-Host "--- syntax check ---"; & (Get-Command python.exe).Source -m py_compile "C:\CamSRV\v380_event.py"; if ($LASTEXITCODE -ne 0) { throw "SYNTAX ERROR in v380_event.py" }; Write-Host "--- foreground test (25s) ---"; $fg = Start-Job -ScriptBlock { & (Get-Command python.exe).Source 'C:\CamSRV\v380_event.py' 2>&1 }; Wait-Job $fg -Timeout 25 | Out-Null; Stop-Job $fg -ErrorAction SilentlyContinue; Receive-Job $fg | Select-Object -First 60; Start-ScheduledTask -TaskName "CamSRVService"
           Start-Sleep 10
           $task = Get-ScheduledTask -TaskName "CamSRVService"
           Write-Host "CamSRVService state: $($task.State)"
