@@ -127,6 +127,10 @@ jobs:
       # Попутно исправлен путь: раньше задача указывала на
       # C:\CamSRV\terabox\app\v380_gui.py — такого файла в репозитории нет,
       # v380_gui.py и v380_event.py лежат в корне C:\CamSRV.
+                  # v4: задачу планировщика запускает service_watchdog.py — сторож, который
+      # перезапускает v380_event.py при временных сбоях (нет интернета, камера
+      # офлайн — код 1002) с паузами 30с/1м/2м/4м/5м. При ошибках учётных данных
+      # (коды 1011/1012/1018) завершается сразу. Сам v380_event.py не менялся.
       - name: Register CamSRV headless service
         shell: pwsh
         run: |
@@ -139,7 +143,7 @@ jobs:
           & $pyExe --version
 
           $action = New-ScheduledTaskAction -Execute $pyExe `
-            -Argument "C:\CamSRV\v380_event.py" `
+            -Argument "C:\CamSRV\service_watchdog.py" `
             -WorkingDirectory "C:\CamSRV"
           $settings = New-ScheduledTaskSettingsSet `
             -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -155,7 +159,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "--- syntax check ---"; & (Get-Command python.exe).Source -m py_compile "C:\CamSRV\v380_event.py"; if ($LASTEXITCODE -ne 0) { throw "SYNTAX ERROR in v380_event.py" }; Write-Host "--- foreground test (25s) ---"; $fg = Start-Job -ScriptBlock { & (Get-Command python.exe).Source 'C:\CamSRV\v380_event.py' 2>&1 }; Wait-Job $fg -Timeout 25 | Out-Null; Stop-Job $fg -ErrorAction SilentlyContinue; Receive-Job $fg | Select-Object -First 60; Start-ScheduledTask -TaskName "CamSRVService"
+          Write-Host "--- syntax check ---"; & (Get-Command python.exe).Source -m py_compile "C:\CamSRV\v380_event.py"; if ($LASTEXITCODE -ne 0) { throw "SYNTAX ERROR in v380_event.py" }; & (Get-Command python.exe).Source -m py_compile "C:\CamSRV\service_watchdog.py"; if ($LASTEXITCODE -ne 0) { throw "SYNTAX ERROR in service_watchdog.py" }; Write-Host "--- foreground test (25s) ---"; $fg = Start-Job -ScriptBlock { & (Get-Command python.exe).Source 'C:\CamSRV\v380_event.py' 2>&1 }; Wait-Job $fg -Timeout 25 | Out-Null; Stop-Job $fg -ErrorAction SilentlyContinue; Receive-Job $fg | Select-Object -First 60; Start-ScheduledTask -TaskName "CamSRVService"
           Start-Sleep 10
           $task = Get-ScheduledTask -TaskName "CamSRVService"
           Write-Host "CamSRVService state: $($task.State)"
@@ -179,7 +183,7 @@ jobs:
           if (-not $py) {
             Write-Host "--- service.log tail ---"
             Get-Content "C:\CamSRV\data\logs\service.log" -Tail 40 -ErrorAction SilentlyContinue
-            throw "python process not found — v380_event.py did not start."
+            throw "python process not found — service_watchdog.py / v380_event.py did not start."
           }
           $py | Select-Object Name, Id, StartTime | Format-Table -AutoSize
           Write-Host "--- service.log tail ---"
