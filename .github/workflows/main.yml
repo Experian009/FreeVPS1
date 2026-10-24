@@ -72,6 +72,47 @@ jobs:
           }
 
           Write-Host "CamSRV copied from $camSource to $camRoot. The program was not started."
+      - name: Download MobileNet-SSD models (if enabled)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $envFile = "C:\CamSRV\.env.windows"
+          $enabled = $false
+          if (Test-Path $envFile) {
+            $enabled = (Select-String -Path $envFile -Pattern "^HUMAN_DETECT=1" -Quiet) -and (Select-String -Path $envFile -Pattern "^HUMAN_ENGINE=mobilenet" -Quiet)
+          }
+          if (-not $enabled) {
+            Write-Host "MobileNet-SSD engine not enabled - skipping model download."
+            exit 0
+          }
+          $modelsDir = "C:\CamSRV\models"
+          if (-not (Test-Path $modelsDir)) {
+            New-Item -ItemType Directory -Path $modelsDir -Force | Out-Null
+          }
+          $protoUrl = "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/voc/MobileNetSSD_deploy.prototxt"
+          $weightsUrl = "https://raw.githubusercontent.com/saimj7/People-Counting-in-Real-Time/master/detector/MobileNetSSD_deploy.caffemodel"
+          $protoPath = Join-Path $modelsDir "MobileNetSSD_deploy.prototxt"
+          $weightsPath = Join-Path $modelsDir "MobileNetSSD_deploy.caffemodel"
+          $needProto = -not (Test-Path $protoPath)
+          if (-not $needProto) { $needProto = (Get-Item $protoPath).Length -lt 20000 }
+          if ($needProto) {
+            Write-Host "Downloading MobileNetSSD_deploy.prototxt..."
+            Invoke-WebRequest -Uri $protoUrl -OutFile $protoPath -UseBasicParsing
+          }
+          $needWeights = -not (Test-Path $weightsPath)
+          if (-not $needWeights) { $needWeights = (Get-Item $weightsPath).Length -lt 20000000 }
+          if ($needWeights) {
+            Write-Host "Downloading MobileNetSSD_deploy.caffemodel..."
+            Invoke-WebRequest -Uri $weightsUrl -OutFile $weightsPath -UseBasicParsing
+          }
+          $protoSize = (Get-Item $protoPath).Length
+          $weightsSize = (Get-Item $weightsPath).Length
+          Write-Host "MobileNetSSD_deploy.prototxt size: $protoSize bytes"
+          Write-Host "MobileNetSSD_deploy.caffemodel size: $weightsSize bytes"
+          if ($protoSize -lt 20000 -or $weightsSize -lt 20000000) {
+            throw "MobileNet-SSD model download incomplete: prototxt=$protoSize bytes, caffemodel=$weightsSize bytes."
+          }
+          Write-Host "MobileNet-SSD models ready."
       - name: Install human-detection deps (if enabled)
         shell: pwsh
         run: |
