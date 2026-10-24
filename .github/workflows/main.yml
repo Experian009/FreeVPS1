@@ -79,7 +79,7 @@ jobs:
           $envFile = "C:\CamSRV\.env.windows"
           $enabled = $false
           if (Test-Path $envFile) {
-            $enabled = Select-String -Path $envFile -Pattern "^HUMAN_DETECT=1" -Quiet
+            $enabled = (Select-String -Path $envFile -Pattern "^HUMAN_DETECT=1" -Quiet) -and -not (Select-String -Path $envFile -Pattern "^HUMAN_ENGINE=mobilenet" -Quiet)
           }
           if (-not $enabled) {
             Write-Host "HUMAN_DETECT is not enabled in .env.windows - skipping ultralytics install."
@@ -95,6 +95,27 @@ jobs:
           & $pyExe -m pip install --quiet ultralytics
           if ($LASTEXITCODE -ne 0) { throw "pip install ultralytics failed, code $LASTEXITCODE." }
           Write-Host "Human-detection dependencies installed."
+      - name: Install MobileNet-SSD deps (if enabled)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $envFile = "C:\CamSRV\.env.windows"
+          $enabled = $false
+          if (Test-Path $envFile) {
+            $enabled = (Select-String -Path $envFile -Pattern "^HUMAN_DETECT=1" -Quiet) -and (Select-String -Path $envFile -Pattern "^HUMAN_ENGINE=mobilenet" -Quiet)
+          }
+          if (-not $enabled) {
+            Write-Host "MobileNet-SSD engine not enabled - skipping opencv install."
+            exit 0
+          }
+          $pyCmd = Get-Command python.exe -ErrorAction SilentlyContinue
+          if (-not $pyCmd) { $pyCmd = Get-Command py.exe -ErrorAction SilentlyContinue }
+          if (-not $pyCmd) { throw "Python not found on the runner." }
+          $pyExe = $pyCmd.Source
+          Write-Host "Installing opencv (MobileNet-SSD engine) ..."
+          & $pyExe -m pip install --quiet opencv-python-headless
+          if ($LASTEXITCODE -ne 0) { throw "pip install opencv-python-headless failed, code $LASTEXITCODE." }
+          Write-Host "MobileNet-SSD dependencies installed."
 
       
       
