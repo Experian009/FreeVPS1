@@ -153,10 +153,16 @@ jobs:
           if (-not $pyCmd) { $pyCmd = Get-Command py.exe -ErrorAction SilentlyContinue }
           if (-not $pyCmd) { throw "Python not found on the runner." }
           $pyExe = $pyCmd.Source
-          Write-Host "Installing opencv (MobileNet-SSD engine) ..."
+                    Write-Host "Removing any conflicting opencv packages ..."
+          & $pyExe -m pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless
+          Write-Host "pip uninstall exit code: $LASTEXITCODE (non-zero is OK here — a package may simply be absent)."
+          Write-Host "Installing opencv-python-headless (MobileNet-SSD engine) ..."
           & $pyExe -m pip install --quiet opencv-python-headless
           if ($LASTEXITCODE -ne 0) { throw "pip install opencv-python-headless failed, code $LASTEXITCODE." }
-          Write-Host "MobileNet-SSD dependencies installed."
+          Write-Host "Verifying cv2.dnn.readNetFromCaffe ..."
+          & $pyExe -c "import cv2; print('cv2 version:', cv2.__version__); assert hasattr(cv2.dnn, 'readNetFromCaffe'), 'readNetFromCaffe missing from cv2.dnn'; print('readNetFromCaffe OK')"
+          if ($LASTEXITCODE -ne 0) { throw "cv2 verification failed: readNetFromCaffe missing — human detection would be BROKEN." }
+          Write-Host "MobileNet-SSD dependencies installed and verified."
 
       
       
