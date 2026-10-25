@@ -157,7 +157,7 @@ jobs:
           & $pyExe -m pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless
           Write-Host "pip uninstall exit code: $LASTEXITCODE (non-zero is OK here — a package may simply be absent)."
           Write-Host "Installing opencv-python-headless (MobileNet-SSD engine) ..."
-          & $pyExe -m pip install --quiet opencv-python-headless==4.8.1.78
+          & $pyExe -m pip install --quiet opencv-python-headless==4.10.0.84
           if ($LASTEXITCODE -ne 0) { throw "pip install opencv-python-headless failed, code $LASTEXITCODE." }
           Write-Host "Verifying cv2.dnn.readNetFromCaffe ..."
           & $pyExe -c "import cv2; print('cv2 version:', cv2.__version__); assert hasattr(cv2.dnn, 'readNetFromCaffe'), 'readNetFromCaffe missing from cv2.dnn'; print('readNetFromCaffe OK')"
