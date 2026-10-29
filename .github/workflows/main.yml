@@ -129,6 +129,11 @@ jobs:
           Write-Host "Task CamSRVService registered."
           Get-ScheduledTask -TaskName "CamSRVService" | Select-Object TaskName, State | Format-Table -AutoSize
 
+      - name: Install NanoDet gate dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & (Get-Command python.exe).Source -m pip install onnxruntime==1.31.1 numpy==2.5.4 pillow==13.0.0
       - name: Start CamSRV service
         shell: pwsh
         run: |
