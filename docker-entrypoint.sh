@@ -4,12 +4,12 @@ container=docker
 export container
 
 if [ $# -eq 0 ]; then
-	echo >&2 'ERROR: No command specified. You probably want to run `journalctl -f`, or maybe `bash`?'
+	echo >&2 "ERROR: No command specified. You probably want to run \`journalctl -f\`, or maybe \`bash\`?"
 	exit 1
 fi
 
 if [ ! -t 0 ]; then
-	echo >&2 'ERROR: TTY needs to be enabled (`docker run -t ...`).'
+	echo >&2 "ERROR: TTY needs to be enabled (\`docker run -t ...\`)."
 	exit 1
 fi
 
@@ -57,6 +57,6 @@ else
 	echo >&2 'ERROR: systemd is not installed'
 	exit 1
 fi
-systemd_args="--show-status=false --unit=docker-entrypoint.target"
-echo "$0: starting $systemd $systemd_args"
-exec $systemd $systemd_args
+systemd_args=(--show-status=false --unit=docker-entrypoint.target)
+echo "$0: starting $systemd ${systemd_args[*]}"
+exec "$systemd" "${systemd_args[@]}"
